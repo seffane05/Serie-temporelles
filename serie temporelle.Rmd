@@ -1,0 +1,294 @@
+---
+title: "serie partie 2"
+author: "SEFFANE Asmaa"
+date: "2023-06-03"
+output: word_document
+---
+
+Nous intéressons dans ce jeux de données à l’évolution sur 10 ans du nombre d’immatriculations de voitures particulières en France
+
+
+```{r setup, include=FALSE}
+ library(readxl)
+immat <- read_excel("Immatriculations.xls")
+Y <- ts(immat[!is.na(immat[,2]),2],frequency = 12)
+plot(Y, xlab = "Année", ylab = "nbr de voyageur")
+```
+
+Tracons la courbe de la serie:
+
+```{r}
+plot(Y, xlab = "Année", ylab = "nbr d'immatriculation")
+```
+On notice une varience qui n'est pas constante.
+Il y a une saisonnalité qui n'est pas trop claire.
+Il n'y a pas de linéarité.
+
+Le Monthplot:
+```{r pressure, echo=FALSE}
+monthplot(Y)
+```
+On remarque que le nombre des immatriculations atteint son maximun en mois de decembre, il est aussi important en janvier juillet et octobre.
+Alors qu'il est trés petit en juin, aout et septembre.
+Aussi il y a une saisonnalité.
+
+Le lag out:
+
+```{r, echo = FALSE}
+ lag.plot(Y,lags=12,layout=c(3,4),do.lines=FALSE)
+
+```
+
+D'aprés le log out on remarque qu'il y a une tendance peu importante chaque année.
+
+
+DECOMPOSITION DE LA SERIE TEMPORELLE:
+
+Je commence par faire le test de la bande pour savoir le type de modéle, soit additif ou multiplicatif:
+
+```{r}
+MatX=matrix(data=Y,nrow=12)
+Min=apply(MatX,2,min)
+Max=apply(MatX,2,max)
+AnneeMin=c(0:9)
+AnneeMax=c(1:10)
+plot.ts(Y)
+points(AnneeMin,Min,col="blue",type = "l")
+points(AnneeMax,Max,col="red",type = "l")
+```
+
+Les deux bandes ne sont pas paralelles, donc le modele est multiplicatif, maintenant on utilise la fonction decompose:
+
+
+```{r}
+fit1 <- decompose(Y,type="multiplicative")
+plot(fit1)
+```
+
+La distribution des residus ne semble pas dependre du temps,
+ce qui semble indiquer que ce modele est mieux adapte pour cette serie.
+
+voyons les predictions:
+```{r}
+plot(Y,xlab="Temps",ylab="Evolution de l’interet",
+main="decompose() avec modele multiplicatif")
+points(fit1$trend,type="l",col=2)
+points(fit1$trend*fit1$seasonal,type="l",col="purple")
+legend("topright",c(expression(X[t]),expression(m[t]),expression(m[t]*s[t])),
+col=c(1,2,"purple"),lty=1)
+```
+Les prediction n'est pas parfaite, il y a des sous estimations et des surestimations sauf l'année 7 dont il y a une prediction presque parfaite.
+
+jetons un oil sur la prediction du model additif pour voir si elle est mieux:
+
+```{r}
+fit2 <- decompose(Y)
+plot(fit2)
+plot(Y,xlab="Temps",ylab="nbr d'immatriculation",
+        main="decompose() avec modele additif")
+ points(fit2$trend,type="l",col=2)
+ points(fit2$trend+fit2$seasonal,type="l",col="purple")
+ legend("topright",c(expression(X[t]),expression(m[t])
+              ,expression(m[t]+s[t])),
+           col=c(1,2,'purple'),lty=1)
+```
+
+En comparant les deux models, il n'y a pas de grande difference ce qui rend ce model complexe, mais en se basant sur la methode de la bande, je choisis de travailler avec le model multiplicatif.
+
+les residus:
+
+```{r}
+ plot(fit1$figure,type="l",xlab="mois",ylab="motif periodique")
+```
+Je remarque plusieurs piques maximales en mars, juillet et octobre et deux piques minimales en juin et septembre.
+
+
+PREDICTION:
+je commence par enlever la derniere année pour la comparer avec mes predictions:
+```{r}
+Y.19 <- window(Y,start=1,end=c(9,12))
+Y.10 <- window(Y,start=10)
+```
+
+
+LISSAGE EXPONENTIELLE:
+
+Je passe directement au lissage exponentiel triple:
+
+```{r}
+library(forecast)
+library(caschrono)
+library(stats)
+
+fitHW = ets(Y.19,model="MMM")
+
+predHW = forecast(fitHW,h=12)
+plot(predHW)
+points(Y.10,type="l",col="darkgreen",lwd=2)
+legend("top",c("Valeurs observees","Predictions"), col=c("darkgreen","blue"),
+lty=rep(1,2),lwd = rep(2,2))
+
+ predict(fitHW,12)
+```
+Les prédictions sont loin des valeurs observées.
+
+je vais laisser le choix à R de faire les prediction
+
+```{r}
+fit <- ets(Y.19)
+predfit <- forecast(fit,h=12)
+plot(predfit)
+points(Y.10,type="l",col="darkgreen",lwd=2)
+legend("top",c("Valeurs observees","Predictions"), col=c("darkgreen","blue"),
+lty=rep(1,2),lwd = rep(2,2))
+
+summary(fit)
+```
+
+Comparaisons des deux predictions:
+
+```{r}
+plot(Y.10,col="darkgreen",lwd=2,ylab="Nbr pass",xlab="Temps")
+points(predHW$mean,col="blue",lwd=2,type="l")
+points(predfit$mean,col="purple",lwd=2,type="l")
+legend("topleft",c("Vraies valeurs","Holt Winters","ETS"),
+         col=c("darkgreen","blue","purple"),lty=rep(1,),lwd=rep(2,3),cex=0.7)
+```
+
+Il est bien claire que la prediction faite par default est la plus proches des vrais valeurs.
+mais il n'y a pas de grandes differences entre lui et le lissage exponentiel. les deux courbes sont tres proches.
+
+comparant leur AIC:
+
+```{r}
+fit$aic
+fitHW$aic
+```
+En se basant sur le AIC, le dauxieme model est meilleur que celui du lissage exponentielle.
+Donc on va utiliser ce model par la suite.
+
+PREDICTION DE L'ANNEE APRES:
+
+```{r}
+fittotal <- ets(Y)
+
+predfittotal <- forecast(fittotal,h=12)
+plot(predfittotal)
+```
+
+MODELISATION
+
+Estimation de la moyenne et des fonctions d’autocovariance et d’autocorrelation:
+
+```{r}
+mean(Y)
+acf(Y,type ="covariance")
+acf(Y,type ="correlation")
+Pacf(Y)
+
+```
+
+D'apres le ACF et le PACF, on n'a pas besoin de faire une transformation, car il y une decroissante exponentielle vers 0.
+
+Faisons le Box.test pour verifier la blancheur du résidus:  
+
+```{r}
+length(Y)
+Box.test(Y,lag=20,type="Box-Pierce")
+
+```
+La P_valeur est plus petite que 5%, donc la blancheur n'est pas vérifié.
+
+la fonction auto.arima nous donne le modele le plus convenable pour nos données:
+```{r}
+auto.arima(Y.19)
+```
+Donc notre modele sera une SARIMA:
+```{r}
+modelSARIMA=auto.arima(Y.19)
+modelSARIMA
+```
+
+
+```{r}
+t_stat(modelSARIMA)
+cor.arma(modelSARIMA)
+Box.test(modelSARIMA$residuals,lag=20)
+```
+La P_valeur est plus grande que 5%, donc la blancheur des residus est verifié.
+La correlations entre les variable est inferieur à 0.9, donc c'est parfait.
+Donc le model est parfait.
+
+Vérifiant le ACF des résidus de ce model:
+```{r}
+acf(modelSARIMA$residuals)
+```
+comme On peut voir, l'ACF est bien.
+
+PREDICTION
+
+```{r}
+predSARIMA=forecast(modelSARIMA,12)
+predSARIMA
+```
+
+
+```{r}
+plot(predSARIMA)
+points(Y.19,type="l",col="darkgreen",lwd=2)
+legend("top",c("Valeurs observees","Predictions"),col=c("darkgreen","blue"),
+ lty=rep(1,2),lwd = rep(2,2))
+
+```
+
+Comparons Les prédictions avec les vrais valeurs:
+```{r}
+plot(Y.10,col="darkgreen",lwd=2,ylab="nbr des immatricules",xlab="Temps",xlim=c(10,11),
+ ylim=range(c(Y.10,predSARIMA$lower,predSARIMA$upper)))
+points(predSARIMA$mean,col="blue",lwd=2,type="l")
+points(predSARIMA$lower[,2],col="blue",type="l",lty=2)
+points(predSARIMA$upper[,2],col="blue",type="l",lty=2)
+legend("topleft",c("Valeurs observees","Predictions"),
+col=c("darkgreen","blue"),lty=rep(1,2),lwd = rep(2,2))
+```
+Le modéle n'est pas parfait, mais les deux courbes sont proche et donc notre modéle est assez bon.
+Faisont une derniere comparaison entre SARIMA et le modéle choisi par avant "predfittotal":
+
+```{r}
+fittotal <- ets(Y)
+predfittotal <- forecast(fittotal,h=12)
+
+plot(Y.10,col="darkgreen",lwd=2,ylab="Nombre de IMMATRICULES",xlab="Temps",
+xlim=c(10,11),ylim=range(c(Y.10,
+predSARIMA$lower,predSARIMA$upper,predfittotal$lower,predfittotal$upper)))
+points(predSARIMA$mean,col="blue",lwd=2,type="l")
+points(predSARIMA$lower[,2],col="blue",type="l",lty=2)
+points(predSARIMA$upper[,2],col="blue",type="l",lty=2)
+points(predfit$mean,col="red",lwd=2,type="l")
+points(predfit$lower[,2],col="red",lwd=2,type="l",lty=2)
+points(predfit$upper[,2],col="red",lwd=2,type="l",lty=2)
+legend("topleft",c("Valeurs observees","SARIMA", "Liss.exp."),
+ col=c("darkgreen","blue","red"),lty=rep(1,3),lwd = rep(2,3),cex=0.7)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
